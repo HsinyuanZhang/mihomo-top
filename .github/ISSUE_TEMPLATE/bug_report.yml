@@ -1,0 +1,22 @@
+name: Bug report
+description: Report incorrect data, attribution, or runtime behavior.
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: Include a minimal reproduction using synthetic hosts and credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: mihomo-top version, Linux distribution/kernel, mihomo version, tmux version if relevant, and execution mode.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Remove controller secrets, private hostnames, process details, and other personal information from logs and JSON.

@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: cargo +stable fmt --all --check
+      - run: cargo +stable clippy --locked --all-targets -- -D warnings
+      - run: cargo +stable test --locked
+      - run: cargo +stable build --locked --release
+      - name: Check CLI and source package
+        run: |
+          ./target/release/mihomo-top --version
+          ./target/release/mihomo-top --help
+          cargo +stable package --locked --list
+  msrv:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - run: rustup toolchain install 1.88.0 --profile minimal
+      - run: cargo +1.88.0 test --locked

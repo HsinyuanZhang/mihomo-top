@@ -1,0 +1,18 @@
+# User service: copy to ~/.config/systemd/user/mihomo-top.service.
+# Install the binary at ~/.local/bin/mihomo-top, then:
+# systemctl --user daemon-reload
+# systemctl --user enable --now mihomo-top.service
+# Read output: journalctl --user -u mihomo-top.service -f -o cat
+# For pane attribution add --socket /absolute/path/to/your/tmux/socket.
+[Unit]
+Description=Read-only mihomo connection monitor
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mihomo-top --stream --no-tmux
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target
