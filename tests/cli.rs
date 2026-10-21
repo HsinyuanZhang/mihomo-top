@@ -207,6 +207,72 @@ fn non_tty_default_stream_clears_rows_and_stops_on_sigterm() {
 }
 
 #[test]
+fn once_offline_controller_warns_and_exits_zero() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    drop(listener);
+    let run = |extra: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mihomo-top"));
+        command
+            .args([
+                "--once",
+                "--controller",
+                &address,
+                "--timeout-secs",
+                "1",
+                "--no-attribution",
+                "--no-tmux",
+            ])
+            .args(extra)
+            .env_remove("MIHOMO_SECRET")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Process(command.spawn().unwrap()).finish(Duration::from_secs(4))
+    };
+    let output = run(&[]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("WARNING: Mihomo offline"));
+    assert!(stderr.contains(&address));
+    assert!(stderr.contains("processes are NOT proxied"));
+    assert!(
+        !stderr.contains("connection refused"),
+        "raw error leaked: {stderr}"
+    );
+    let value: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(value["schema"], 1);
+    assert_eq!(value["connection_state"], "offline");
+    assert_eq!(value["stale"], true);
+    assert!(value["warning"]
+        .as_str()
+        .unwrap()
+        .contains("processes are NOT proxied"));
+    assert!(value["last_error"].is_null());
+    let rows = value["connections"].as_array().unwrap();
+    assert!(rows
+        .iter()
+        .all(|row| row["proxy_status"] == "mihomo-offline" && row["chain"] == "mihomo-offline"));
+
+    let strict = run(&["--strict"]);
+    let strict_err = String::from_utf8_lossy(&strict.stderr);
+    assert!(!strict.status.success(), "{strict_err}");
+    assert!(strict.stdout.is_empty(), "strict mode wrote a snapshot");
+    assert!(strict_err.contains("WARNING: Mihomo offline"));
+    assert!(!strict_err.contains("connection refused"));
+
+    let verbose = run(&["--verbose"]);
+    let verbose_err = String::from_utf8_lossy(&verbose.stderr);
+    assert!(verbose.status.success(), "{verbose_err}");
+    assert!(verbose_err.contains("WARNING: Mihomo offline"));
+    assert!(
+        verbose_err.contains("connection refused"),
+        "verbose mode should include the raw error: {verbose_err}"
+    );
+}
+
+#[test]
 fn malformed_envelope_is_an_error_without_stdout_facts() {
     let server = Server::start(vec![json!({"connections":null})], false);
     let output = Process(

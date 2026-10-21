@@ -15,6 +15,8 @@ The MSRV is Rust 1.88. At the latest validation, both stable and MSRV test runs 
 
 For manual output checks, start a local mihomo controller in a safe test environment, then verify that `--once` produces one valid JSON document and `--stream` produces newline-delimited complete snapshots. When testing interruption of a blocked pipe, accept an unterminated final JSONL line and ensure the consumer ignores it.
 
+The repeatable version of that check is `scripts/test-env.sh`. It installs pinned mihomo v1.19.32, serves a documentation egress address from a local mock, and runs the ignored live tests. See [TESTING.md](../TESTING.md). Those live tests are not part of the offline `cargo test` count above.
+
 ## Compatibility observations
 
 These are observed test combinations, not a compatibility promise.
@@ -25,4 +27,6 @@ These are observed test combinations, not a compatibility promise.
 | Rust | 1.88 and current stable | MSRV tests passed; stable checks passed |
 | mihomo controller | 1.19.25 | Live `--once` snapshot check validated; rows received and local process/pane attribution resolved in the test session |
 | tmux | 3.2a | Optional attribution path and independent TUI status, sorting, and quit controls validated |
+| tmux | 3.5a | `list-panes -F` octal-escapes the unit separator; pane parsing covers that form |
+| mihomo controller | 1.19.32, loopback lab, no subscription | `scripts/test-env.sh` on Linux amd64 |
 | Other Linux distributions, mihomo versions, and ARM | — | Not yet tested |

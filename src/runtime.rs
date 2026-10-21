@@ -9,7 +9,10 @@ use anyhow::{anyhow, Result};
 
 use crate::config::Config;
 use crate::model::ConnectionsFrame;
-use crate::state::{Aggregator, Dashboard, RealPaneSource, RealProcSource, SortMode, Stats};
+use crate::state::{
+    is_offline_reason, mark_rows_offline, offline_warning, Aggregator, Dashboard, RealPaneSource,
+    RealProcSource, SortMode, Stats,
+};
 use crate::ws::{self, WsEvent};
 
 pub struct Runtime {
@@ -52,6 +55,7 @@ impl Runtime {
             Arc::clone(&stop),
             tx,
             Arc::clone(&stats),
+            cfg.verbose,
         );
         let stop_agg = Arc::clone(&stop);
         let dash_out = Arc::clone(&dashboard);
@@ -95,14 +99,24 @@ impl Runtime {
                             if pending.replace(frame).is_some() { stats.dropped_events.fetch_add(1, Ordering::Relaxed); }
                             current.connection_state = "connected".into();
                             current.last_error = None;
+                            current.warning = None;
                             last_received = Some(Instant::now());
                         }
                         WsEvent::Connected => {
                             current.connection_state = "connected".into();
+                            current.last_error = None;
+                            current.warning = None;
                         }
                         WsEvent::Disconnected(reason) => {
-                            current.connection_state = "reconnecting".into();
-                            current.last_error = Some(reason);
+                            if is_offline_reason(&reason) {
+                                current.connection_state = "offline".into();
+                                current.warning = Some(offline_warning(&current.controller));
+                                current.last_error = if config.verbose { Some(reason) } else { None };
+                            } else {
+                                current.connection_state = "reconnecting".into();
+                                current.warning = None;
+                                current.last_error = Some(reason);
+                            }
                         }
                         WsEvent::ParseError(reason) => {
                             current.connection_state = "parse_error".into();
@@ -119,7 +133,30 @@ impl Runtime {
                     last_frame = Some(frame);
                 }
                 current.sort_mode = if sort_in.load(Ordering::Relaxed) == 1 { SortMode::NewestFirst } else { SortMode::BytesDesc };
-                if let Some(frame) = &last_frame { current.rows = agg.rows(frame, current.sort_mode); }
+                if current.connection_state == "offline" {
+                    let panes = if config.attribution && config.panes {
+                        agg.offline_panes()
+                    } else {
+                        Vec::new()
+                    };
+                    if let Some(frame) = &last_frame {
+                        current.rows = agg.rows(frame, current.sort_mode);
+                        mark_rows_offline(&mut current.rows);
+                    } else {
+                        current.rows.clear();
+                    }
+                    for pane in panes {
+                        let listed = pane.pid.is_some_and(|pid| {
+                            current.rows.iter().any(|row| row.pid == Some(pid))
+                        });
+                        if !listed {
+                            current.rows.push(pane);
+                        }
+                    }
+                    current.connection_count = current.rows.len();
+                } else if let Some(frame) = &last_frame {
+                    current.rows = agg.rows(frame, current.sort_mode);
+                }
                 let too_old = last_received.is_none_or(|t| t.elapsed() > Duration::from_secs(3));
                 let queued_too_old = last_frame.as_ref().and_then(|f| f.received_at).is_some_and(|t| (chrono::Utc::now() - t).num_milliseconds() > 3000);
                 current.stale = current.connection_state != "connected" || too_old || queued_too_old;

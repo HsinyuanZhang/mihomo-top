@@ -4,7 +4,25 @@ All notable user-facing changes are recorded here.
 
 ## Unreleased
 
+### Changed
+- An unreachable controller no longer ends the TUI or `--once`. The screen
+  shows `WARNING: Mihomo offline (HOST:PORT unreachable) — processes are NOT proxied`,
+  keeps retrying, and lists known processes as `mihomo-offline` until mihomo
+  returns. `--once` prints that warning and a snapshot, then exits 0.
+  `--strict` restores the non-zero `--once` exit. `--verbose` adds the raw
+  socket error.
+
+### Fixed
+- Pane attribution on tmux 3.5. That version prints the unit separator in
+  `list-panes -F` as the octal escape `\037`, so the pane list was parsed as
+  empty and every connection stayed without a session.
+
 ### Added
+- Reproducible Linux lab (`scripts/test-env.sh`): a pinned mihomo with a
+  loopback DIRECT outbound and a mock upstream, fake egress responses, and
+  live tests for process proxy settings, attribution, and a stopped
+  controller. GitHub Actions runs that lab on Linux and checks the Linux-only
+  build guard on macOS.
 - TUI polish (no new dependencies): semantic colors (connection state
   green/yellow/red, DIRECT chains dimmed, proxied chains accented,
   unresolved-attribution reasons in yellow, byte magnitudes tinted at

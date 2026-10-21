@@ -6,7 +6,7 @@
 
 > **实验性 v0.1。** 输出适合实时排查，不是记账记录，也不保证涵盖主机全部流量。依赖输出前请阅读[限制说明](docs/limitations.md)。
 
-[English README](README.md) · [输出 Schema](docs/output-schema.md) · [验证](docs/validation.md) · [路线图](docs/roadmap.md) · [贡献指南](CONTRIBUTING.md)
+[English README](README.md) · [输出 Schema](docs/output-schema.md) · [验证](docs/validation.md) · [测试](TESTING.md) · [路线图](docs/roadmap.md) · [贡献指南](CONTRIBUTING.md)
 
 ## 监视范围
 
@@ -108,6 +108,8 @@ journalctl --user -u mihomo-top.service -f -o cat
 | `--no-attribution` | 禁用所有本机进程和窗格归属。 |
 | `--tick-ms N` | TUI/流输出刷新间隔；默认 `1000`，范围 `100`–`60000`。 |
 | `--timeout-secs N` | `--once` 超时秒数；默认 `10`。 |
+| `--strict` | 控制器不可达时，`--once` 以非零状态退出。 |
+| `--verbose` | 在简短的离线警告之后打印原始套接字错误。 |
 
 同时提供密钥文件和 `MIHOMO_SECRET` 时，优先使用显式文件。请勿把密钥放在命令行中，因为本机其他进程可能看到它。
 
@@ -116,3 +118,13 @@ journalctl --user -u mihomo-top.service -f -o cat
 本机归属是可选功能，只在本机 Linux 主机上执行。`--no-attribution` 会完全关闭；`--no-tmux` 保留进程查询但关闭 tmux 查询。程序不需要 root，因此其他用户拥有的 socket 可能无法归属。连接流及其目标元数据来自本机 mihomo 控制器；本工具不会建立连接历史，也不保证完整覆盖。
 
 更多边界和失败场景见[docs/limitations.md](docs/limitations.md)。
+
+## 测试
+
+控制器不可达时，TUI 保持运行并显示黄色离线警告，把已知进程标为 `mihomo-offline`，并在 mihomo 恢复连接后清除警告。`--once` 把同样的警告打到 stderr、把快照打到 stdout，然后以 0 退出。脚本需要失败时加 `--strict`。`--verbose` 会附上原始套接字错误。
+
+离线检查（`cargo test --locked`）不需要 mihomo。实机实验环境的运行方式见 [TESTING.md](TESTING.md)：脚本会下载固定版本的 mihomo，只使用本机 mock 代理，并核对每个进程的可见状态、控制器报告的目标和连通性。
+
+```sh
+scripts/test-env.sh
+```

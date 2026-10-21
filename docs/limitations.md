@@ -8,7 +8,8 @@
 - The cumulative upload/download totals are core totals reported by mihomo. Per-connection values are values in the current controller data, not a durable accounting ledger.
 - The tool does not preserve history and makes no completeness guarantee.
 - Direct traffic, traffic that bypasses mihomo, and traffic managed by a different proxy/controller do not appear merely because they exist on the machine.
-- A frame can become stale while reconnecting, after a parse error, or while the controller is unavailable. Consult `connection_state`, `last_error`, and `stale` in structured output.
+- A frame can become stale while reconnecting, after a parse error, or while the controller is unavailable. Consult `connection_state`, `warning`, `last_error`, and `stale` in structured output.
+- An unreachable controller (`connection_state: offline`) does not stop the TUI or `--stream`. They keep retrying. `--once` exits 0 with a snapshot unless `--strict` is set. The offline process list is the last controller rows plus visible tmux panes; it is not a scan of every process on the machine.
 
 ## Local attribution
 

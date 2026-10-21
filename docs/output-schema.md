@@ -23,8 +23,9 @@ Every document has `schema: 1`. Consumers should reject or explicitly handle unk
 | `last_frame_at` | string or null | RFC 3339 receipt time of the most recent valid controller frame. |
 | `attribution_notes` | array of strings | Global notes about attribution conditions. |
 | `stats_snapshot` | object | Summary counters/statistics for the current monitor session. |
-| `connection_state` | string | `connecting`, `connected`, `reconnecting`, `parse_error`, or `stopped`. |
-| `last_error` | string or null | Most recent non-secret error, if any. |
+| `connection_state` | string | `connecting`, `connected`, `reconnecting`, `offline`, `parse_error`, or `stopped`. |
+| `warning` | string, omitted when empty | Short notice while the controller is unreachable: `WARNING: Mihomo offline (HOST:PORT unreachable) — processes are NOT proxied`. |
+| `last_error` | string or null | Raw controller error. Omitted for an offline controller unless `--verbose`. Never the secret. |
 | `stale` | boolean | True when state is not `connected`, no valid frame has arrived, or the latest frame is older than three seconds. |
 | `local_attribution` | boolean | Whether local process/pane attribution was enabled. |
 
@@ -71,12 +72,15 @@ Each object in `connections` contains these fields. Empty or unavailable values 
 | `age_seconds` | number or null | Age derived from connection start time, when parseable. |
 | `attribution_status` | string | Local attribution result, including unavailable/unknown states. |
 | `attribution_reason` | string or null | Explanation for the attribution result. |
+| `proxy_status` | string, omitted when empty | `mihomo-offline` when the row is listed because the controller is unreachable. The chain is the same word, meaning there is no proxy. |
 
 `attribution_status` is one of `resolved`, `unknown`, `disabled`, `unsupported`, or `ambiguous`. Do not infer a process for UDP in schema version 1: v0.1 explicitly leaves local UDP process attribution unsupported.
 
 ## State handling
 
-`connected` means the monitor has a live controller connection. `connecting` and `reconnecting` mean it is attempting to establish or restore one. `parse_error` indicates that a received payload could not be accepted as a valid connection frame. `stopped` indicates shutdown. During non-connected states, prior data can be stale; use `stale`, `last_frame_at`, and `last_error` to decide whether it is usable for the consumer's purpose.
+`connected` means the monitor has a live controller connection. `connecting` and `reconnecting` mean it is attempting to establish or restore one. `offline` means the controller could not be reached (connection refused, timeout, reset). `parse_error` indicates that a received payload could not be accepted as a valid connection frame. `stopped` indicates shutdown. During non-connected states, prior data can be stale; use `stale`, `last_frame_at`, and `last_error` to decide whether it is usable for the consumer's purpose.
+
+While `connection_state` is `offline`, the TUI stays open, shows `warning`, and keeps retrying with backoff. Rows are previously seen connections plus visible tmux panes, each with `proxy_status` `mihomo-offline`. The warning clears after the controller accepts a connection again. `--once` prints `warning` to stderr, writes this snapshot to stdout, and exits 0. `--strict` exits non-zero and writes no snapshot. `--verbose` adds the raw socket error; the default message does not. A rejected secret or a malformed frame is still an error and is not reported as offline.
 
 ## Example
 

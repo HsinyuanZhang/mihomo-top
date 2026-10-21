@@ -139,6 +139,9 @@ pub struct Row {
     pub attribution_status: String,
     pub attribution_reason: Option<String>,
     pub pid_start_time: Option<u64>,
+    /// Set when this row is shown because the controller is unreachable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_status: Option<String>,
 }
 #[derive(Debug, Default, Serialize)]
 pub struct Stats {
@@ -175,8 +178,42 @@ pub struct Dashboard {
     pub stats_snapshot: StatsSnapshot,
     pub connection_state: String,
     pub last_error: Option<String>,
+    /// Short user-facing notice. Present while the controller is unreachable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
     pub stale: bool,
     pub local_attribution: bool,
+}
+
+pub const OFFLINE_STATUS: &str = "mihomo-offline";
+
+pub fn offline_warning(controller: &str) -> String {
+    format!("WARNING: Mihomo offline ({controller} unreachable) — processes are NOT proxied")
+}
+
+/// Connect failures that mean the controller is down, rather than a bad frame
+/// or a rejected secret.
+pub fn is_offline_reason(reason: &str) -> bool {
+    const NEEDLES: [&str; 5] = [
+        "connection refused",
+        "timed out",
+        "connection reset",
+        "not connected",
+        "i/o error",
+    ];
+    let reason = reason.to_ascii_lowercase();
+    NEEDLES.iter().any(|needle| reason.contains(needle))
+}
+
+pub fn mark_rows_offline(rows: &mut [Row]) {
+    for row in rows {
+        row.proxy_status = Some(OFFLINE_STATUS.into());
+        row.chain = OFFLINE_STATUS.into();
+        row.chains.clear();
+        row.rule.clear();
+        row.rule_payload.clear();
+        row.attribution_reason = Some("not proxied; mihomo offline".into());
+    }
 }
 /// Core connection identity: id + protocol + canonical source endpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -416,7 +453,42 @@ impl<P: ProcSource, T: PaneSource> Aggregator<P, T> {
             attribution_status: a.status.as_str().into(),
             attribution_reason: a.reason,
             pid_start_time: a.pid_start_time,
+            proxy_status: None,
         }
+    }
+
+    /// Tmux pane shells to show while the controller is down. Empty when
+    /// attribution or panes are disabled, or when no server is running.
+    pub fn offline_panes(&mut self) -> Vec<Row> {
+        if !self.attribution_enabled || !self.panes_enabled {
+            return Vec::new();
+        }
+        self.refresh_pane_map_if_due();
+        self.pane_map
+            .panes()
+            .iter()
+            .map(|pane| {
+                let comm = crate::procnet::read_comm(&self.proc_root, pane.pane_pid);
+                let process = if comm.is_empty() || comm == "?" {
+                    pane.pane_id.clone()
+                } else {
+                    comm
+                };
+                Row {
+                    process,
+                    session: Some(pane.session_name.clone()),
+                    pane_id: Some(pane.pane_id.clone()),
+                    pid: Some(pane.pane_pid),
+                    pid_start_time: read_start_time(&self.proc_root, pane.pane_pid),
+                    chain: OFFLINE_STATUS.into(),
+                    proxy_status: Some(OFFLINE_STATUS.into()),
+                    attribution_status: "resolved".into(),
+                    attribution_reason: Some("not proxied; mihomo offline".into()),
+                    id: format!("offline:{}", pane.pane_id),
+                    ..Row::default()
+                }
+            })
+            .collect()
     }
     pub fn stats(&self) -> &Stats {
         &self.stats
@@ -787,5 +859,28 @@ mod tests {
         y.download = 0;
         let f = frame(vec![y, x]);
         assert_eq!(a.rows(&f, SortMode::BytesDesc)[0].id, "huge");
+    }
+
+    #[test]
+    fn offline_reason_and_row_marking() {
+        assert!(is_offline_reason(
+            "controller connect failed: connection refused"
+        ));
+        assert!(is_offline_reason("controller connect failed: timed out"));
+        assert!(is_offline_reason("websocket read failed: connection reset"));
+        assert!(!is_offline_reason("websocket handshake rejected: HTTP 401"));
+        let mut rows = vec![Row {
+            process: "curl".into(),
+            chain: "Proxy".into(),
+            chains: vec!["Proxy".into()],
+            rule: "Match".into(),
+            ..Row::default()
+        }];
+        mark_rows_offline(&mut rows);
+        assert_eq!(rows[0].proxy_status.as_deref(), Some(OFFLINE_STATUS));
+        assert_eq!(rows[0].chain, OFFLINE_STATUS);
+        assert!(rows[0].chains.is_empty());
+        assert!(rows[0].rule.is_empty());
+        assert!(offline_warning("127.0.0.1:9090").contains("processes are NOT proxied"));
     }
 }

@@ -6,7 +6,7 @@ It runs entirely as an ordinary user: no root access, daemon, packet capture, or
 
 > **Experimental v0.1.** Treat the output as a live observability aid, not an accounting record or a complete inventory of machine traffic. Read the [limitations](docs/limitations.md) before depending on it.
 
-[简体中文说明](README.zh-CN.md) · [Output schema](docs/output-schema.md) · [Validation](docs/validation.md) · [Roadmap](docs/roadmap.md) · [Contributing](CONTRIBUTING.md)
+[简体中文说明](README.zh-CN.md) · [Output schema](docs/output-schema.md) · [Validation](docs/validation.md) · [Testing](TESTING.md) · [Roadmap](docs/roadmap.md) · [Contributing](CONTRIBUTING.md)
 
 ## What it monitors
 
@@ -108,6 +108,8 @@ The supplied unit starts `--stream --no-tmux` and deliberately contains no contr
 | `--no-attribution` | Disable all local process and pane attribution. |
 | `--tick-ms N` | UI/stream refresh interval; default `1000`, valid range `100`–`60000`. |
 | `--timeout-secs N` | Time limit for `--once`; default `10`. |
+| `--strict` | `--once` exits non-zero when the controller is unreachable. |
+| `--verbose` | Print the raw controller error after the short offline warning. |
 
 When both a secret file and `MIHOMO_SECRET` are available, the explicit file is used. Do not put a controller secret on the command line, where other local processes may be able to see it.
 
@@ -116,6 +118,16 @@ When both a secret file and `MIHOMO_SECRET` are available, the explicit file is 
 Local attribution is optional and performed only on the local Linux host. `--no-attribution` disables it completely; `--no-tmux` keeps process lookup but disables tmux lookup. The monitor does not need root, so sockets owned by other users can remain unattributed. The connection stream and its destination metadata are supplied by the local mihomo controller; the tool does not create connection history or promise complete coverage.
 
 For detail on these boundaries and failure cases, see [docs/limitations.md](docs/limitations.md).
+
+## Testing
+
+If the controller is down, the TUI stays open, shows a yellow offline warning, lists known processes as `mihomo-offline`, and clears the warning after mihomo accepts a connection again. `--once` prints the same warning and a snapshot, then exits 0. Pass `--strict` when a script should still fail in that case. `--verbose` adds the raw socket error.
+
+Offline checks (`cargo test --locked`) do not need mihomo. The live lab in [TESTING.md](TESTING.md) downloads a pinned mihomo binary, points it at a local mock proxy, and checks per-process status, reported destination, and connectivity:
+
+```sh
+scripts/test-env.sh
+```
 
 ## License
 
