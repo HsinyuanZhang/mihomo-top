@@ -34,7 +34,8 @@ On Linux this command:
 | `mht-socks` | `ALL_PROXY=socks5://…` inside a private tmux server | Same chain, plus session `mhtlab` and a pane id. tmux 3.5 prints the field separator as `\037`; the parser accepts that and the older raw separator. |
 | `mht-direct` | `HTTP_PROXY` → mihomo, target matches `MATCH,DIRECT` | Row is visible with chain `DIRECT`. |
 | `mht-bad` | `HTTP_PROXY` → `127.0.0.1:1` | The client fails. No row. |
-| controller stopped | mihomo killed | `--once` exits non-zero, stdout is empty, stderr reports `connection refused` and does not contain the secret. A client aimed at the old HTTP port fails. |
+| controller stopped | mihomo killed | `--once` exits 0. stderr is `WARNING: Mihomo offline (127.0.0.1:PORT unreachable) — processes are NOT proxied`, with no raw socket error and no secret. stdout is a snapshot whose `connection_state` is `offline` and whose rows (if any) have `proxy_status` `mihomo-offline`. `--strict` exits non-zero and writes no snapshot. A client aimed at the old HTTP port fails. |
+| controller recovers | TUI starts while mihomo is stopped, then mihomo starts | The TUI shows the yellow warning and lists the pane process as `mihomo-offline`. After mihomo is up, the warning clears and a held client appears as a normal connection. |
 
 The report columns are:
 

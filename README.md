@@ -108,6 +108,8 @@ The supplied unit starts `--stream --no-tmux` and deliberately contains no contr
 | `--no-attribution` | Disable all local process and pane attribution. |
 | `--tick-ms N` | UI/stream refresh interval; default `1000`, valid range `100`–`60000`. |
 | `--timeout-secs N` | Time limit for `--once`; default `10`. |
+| `--strict` | `--once` exits non-zero when the controller is unreachable. |
+| `--verbose` | Print the raw controller error after the short offline warning. |
 
 When both a secret file and `MIHOMO_SECRET` are available, the explicit file is used. Do not put a controller secret on the command line, where other local processes may be able to see it.
 
@@ -118,6 +120,8 @@ Local attribution is optional and performed only on the local Linux host. `--no-
 For detail on these boundaries and failure cases, see [docs/limitations.md](docs/limitations.md).
 
 ## Testing
+
+If the controller is down, the TUI stays open, shows a yellow offline warning, lists known processes as `mihomo-offline`, and clears the warning after mihomo accepts a connection again. `--once` prints the same warning and a snapshot, then exits 0. Pass `--strict` when a script should still fail in that case. `--verbose` adds the raw socket error.
 
 Offline checks (`cargo test --locked`) do not need mihomo. The live lab in [TESTING.md](TESTING.md) downloads a pinned mihomo binary, points it at a local mock proxy, and checks per-process status, reported destination, and connectivity:
 

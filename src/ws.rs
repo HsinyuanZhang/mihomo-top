@@ -41,6 +41,7 @@ pub fn spawn(
     stop: Arc<AtomicBool>,
     tx: SyncSender<WsEvent>,
     stats: Arc<crate::state::Stats>,
+    verbose: bool,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name("ws-reader".into())
@@ -63,14 +64,18 @@ pub fn spawn(
                 if !publish(&tx, WsEvent::Disconnected(reason.clone()), &stats) {
                     break;
                 }
-                log("ws", format!("{reason}; retrying in {backoff:?}"));
+                if verbose {
+                    log("ws", format!("{reason}; retrying in {backoff:?}"));
+                }
                 if wait_or_stop(&stop, backoff) {
                     break;
                 }
                 backoff = (backoff * 2).min(BACKOFF_MAX);
                 reconnecting = true;
             }
-            log("ws", "reader thread exiting");
+            if verbose {
+                log("ws", "reader thread exiting");
+            }
         })
         .expect("spawn ws-reader thread")
 }
@@ -510,6 +515,7 @@ mod tests {
             Arc::clone(&stop),
             tx,
             Arc::new(crate::state::Stats::default()),
+            false,
         );
         let received = matches!(
             rx.recv_timeout(Duration::from_secs(1)),
@@ -556,6 +562,7 @@ mod tests {
             Arc::clone(&stop),
             tx,
             Arc::new(crate::state::Stats::default()),
+            false,
         );
         assert!(matches!(
             rx.recv_timeout(Duration::from_secs(1)),
@@ -593,7 +600,7 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(crate::state::Stats::default());
         let (tx, rx) = sync_channel(8);
-        let reader = spawn(url, None, Arc::clone(&stop), tx, Arc::clone(&stats));
+        let reader = spawn(url, None, Arc::clone(&stop), tx, Arc::clone(&stats), false);
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut frame = None;
         while Instant::now() < deadline {
@@ -648,7 +655,7 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(crate::state::Stats::default());
         let (tx, rx) = sync_channel(8);
-        let reader = spawn(url, None, Arc::clone(&stop), tx, Arc::clone(&stats));
+        let reader = spawn(url, None, Arc::clone(&stop), tx, Arc::clone(&stats), false);
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut received = false;
         while Instant::now() < deadline {

@@ -4,6 +4,14 @@ All notable user-facing changes are recorded here.
 
 ## Unreleased
 
+### Changed
+- An unreachable controller no longer ends the TUI or `--once`. The screen
+  shows `WARNING: Mihomo offline (HOST:PORT unreachable) — processes are NOT proxied`,
+  keeps retrying, and lists known processes as `mihomo-offline` until mihomo
+  returns. `--once` prints that warning and a snapshot, then exits 0.
+  `--strict` restores the non-zero `--once` exit. `--verbose` adds the raw
+  socket error.
+
 ### Fixed
 - Pane attribution on tmux 3.5. That version prints the unit separator in
   `list-panes -F` as the octal escape `\037`, so the pane list was parsed as

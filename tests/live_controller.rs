@@ -70,8 +70,16 @@ fn proxy_matrix_reports_status_ip_and_connectivity() {
 
 #[test]
 #[ignore = "needs Linux, python3, and a mihomo binary; run scripts/test-env.sh"]
-fn stopped_controller_is_an_error_and_the_client_fails() {
+fn stopped_controller_warns_and_exits_zero() {
     if let Err(error) = stopped_controller() {
+        panic!("{error}");
+    }
+}
+
+#[test]
+#[ignore = "needs Linux, python3, tmux, and a mihomo binary; run scripts/test-env.sh"]
+fn offline_tui_reconnects_when_mihomo_starts() {
+    if let Err(error) = controller_recovers() {
         panic!("{error}");
     }
 }
@@ -253,20 +261,59 @@ fn stopped_controller() -> Result<(), String> {
     lab.mihomo = None;
     thread::sleep(Duration::from_millis(100));
 
-    let output = mihomo_output(&lab, ports.api, &["--timeout-secs", "2"])?;
-    if output.status.success() {
-        return Err("mihomo-top succeeded against a stopped controller".into());
-    }
+    let output = mihomo_output(&lab, ports.api, &["--timeout-secs", "2", "--no-tmux"])?;
     let err = String::from_utf8_lossy(&output.stderr);
     let out = String::from_utf8_lossy(&output.stdout);
-    if !out.is_empty() {
-        return Err(format!("stopped controller wrote stdout: {out}"));
+    if !output.status.success() {
+        return Err(format!(
+            "stopped controller exited {}\n{err}\n{out}",
+            output.status
+        ));
     }
-    if !err.contains("connection refused") || !err.contains("no valid frame") {
-        return Err(format!("unexpected stopped-controller error:\n{err}"));
+    if !err.contains("WARNING: Mihomo offline") || !err.contains("processes are NOT proxied") {
+        return Err(format!("missing offline warning:\n{err}"));
     }
-    if err.contains(LAB_SECRET) {
-        return Err("secret leaked in the controller-down error".into());
+    if err.contains("connection refused") {
+        return Err(format!("raw error on stderr:\n{err}"));
+    }
+    if err.contains(LAB_SECRET) || out.contains(LAB_SECRET) {
+        return Err("secret leaked in the controller-down report".into());
+    }
+    let snapshot: Value = serde_json::from_str(&out).map_err(|e| format!("{e}\n{out}"))?;
+    if snapshot["connection_state"] != "offline" {
+        return Err(format!("state {}", snapshot["connection_state"]));
+    }
+    let warning = snapshot["warning"].as_str().unwrap_or("");
+    if !warning.contains("WARNING: Mihomo offline")
+        || !warning.contains(&format!("127.0.0.1:{}", ports.api))
+    {
+        return Err(format!("snapshot warning: {warning}"));
+    }
+    let rows = snapshot["connections"].as_array().ok_or("connections")?;
+    if rows
+        .iter()
+        .any(|row| row["proxy_status"] != "mihomo-offline")
+    {
+        return Err(format!("a row is not mihomo-offline: {snapshot}"));
+    }
+
+    let strict = mihomo_output(
+        &lab,
+        ports.api,
+        &["--timeout-secs", "2", "--no-tmux", "--strict"],
+    )?;
+    let strict_err = String::from_utf8_lossy(&strict.stderr);
+    if strict.status.success() {
+        return Err("strict mode exited 0 against a stopped controller".into());
+    }
+    if !strict.stdout.is_empty() {
+        return Err(format!(
+            "strict mode wrote stdout: {}",
+            String::from_utf8_lossy(&strict.stdout)
+        ));
+    }
+    if !strict_err.contains("WARNING: Mihomo offline") || strict_err.contains(LAB_SECRET) {
+        return Err(format!("strict stderr:\n{strict_err}"));
     }
 
     let result_path = lab.dir.join("down.json");
@@ -310,11 +357,70 @@ fn stopped_controller() -> Result<(), String> {
     }
     let summary = format!(
         "scenario       proxy                         connectivity  egress_ip  reported_ip  status\n\
-         controller-down http://127.0.0.1:{:<5}        failed        -          -            connection refused, no snapshot\n",
+         controller-down http://127.0.0.1:{:<5}        failed        -          -            mihomo-offline\n\
+         {warning}\n",
         ports.http
     );
-    save_artifact("mihomo-top-stopped.txt", &format!("{summary}\n{err}"));
+    save_artifact(
+        "mihomo-top-stopped.txt",
+        &format!("{summary}\n{err}\n{out}"),
+    );
     eprintln!("{summary}");
+    Ok(())
+}
+
+fn controller_recovers() -> Result<(), String> {
+    let mut lab = Lab::new("recover")?;
+    let endpoints = start_mock_server(&mut lab)?;
+    let ports = listen_ports()?;
+    let spec = ConfigSpec {
+        http: ports.http,
+        socks: ports.socks,
+        api: ports.api,
+        upstream: endpoints.upstream,
+        mock_proxy: endpoints.mock_proxy,
+    };
+    let report_ports = Ports {
+        http: ports.http,
+        socks: ports.socks,
+        mock_proxy: endpoints.mock_proxy,
+        mock_direct: endpoints.mock_direct,
+    };
+    fs::write(lab.dir.join("config.yaml"), render_mihomo_config(&spec))
+        .map_err(|e| e.to_string())?;
+    write_secret(&lab.dir.join("secret"))?;
+    let socket = lab.dir.join("tmux.sock");
+    lab.tmux_socket = Some(socket.clone());
+
+    start_view(&lab, ports.api)?;
+    let offline = wait_pane(&socket, Duration::from_secs(6), |text| {
+        text.contains("WARNING: Mihomo offline")
+            && text.contains("processes are NOT proxied")
+            && text.contains("mihomo-offline")
+            && text.contains("127.0.0.1:")
+    })?;
+    if offline.contains("connection refused") {
+        return Err(format!("offline TUI dumped a raw error:\n{offline}"));
+    }
+    if offline.contains(LAB_SECRET) {
+        return Err("secret leaked in the offline TUI".into());
+    }
+    save_artifact("mihomo-top-tui-offline.txt", &offline);
+
+    start_mihomo(&mut lab)?;
+    wait_version(ports.api)?;
+    let case = matrix_cases()
+        .into_iter()
+        .find(|case| case.scenario == "http-proxy")
+        .ok_or("http-proxy case missing")?;
+    let spawned = spawn_case(&mut lab, &case, &report_ports)?;
+    wait_ready(&spawned.ready)?;
+    let recovered = wait_pane(&socket, Duration::from_secs(20), |text| {
+        text.contains("state: connected") && text.contains("mht-http") && !text.contains("WARNING:")
+    })?;
+    save_artifact("mihomo-top-tui-recovered.txt", &recovered);
+    stop_view(&socket);
+    eprintln!("offline banner shown, then cleared after mihomo started");
     Ok(())
 }
 
@@ -901,6 +1007,16 @@ fn conn_rows(snapshot: &Value) -> Result<Vec<ConnRow>, String> {
 
 fn capture_tui(lab: &Lab, api: u16) -> Result<String, String> {
     let socket = lab.dir.join("tmux.sock");
+    start_view(lab, api)?;
+    let text = wait_pane(&socket, Duration::from_secs(4), |text| {
+        text.contains("mht-http") && text.contains("mock-upstream")
+    });
+    stop_view(&socket);
+    text
+}
+
+fn start_view(lab: &Lab, api: u16) -> Result<(), String> {
+    let socket = lab.dir.join("tmux.sock");
     let controller = format!("127.0.0.1:{api}");
     let secret = lab.dir.join("secret");
     let status = Command::new("tmux")
@@ -931,27 +1047,43 @@ fn capture_tui(lab: &Lab, api: u16) -> Result<String, String> {
     if !status.success() {
         return Err(format!("tui session failed: {status}"));
     }
-    let deadline = Instant::now() + Duration::from_secs(4);
+    Ok(())
+}
+
+fn pane_text(socket: &Path) -> Result<String, String> {
+    let output = Command::new("tmux")
+        .args([
+            "-S",
+            &socket.to_string_lossy(),
+            "capture-pane",
+            "-t",
+            "view",
+            "-p",
+            "-J",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn wait_pane(
+    socket: &Path,
+    budget: Duration,
+    mut pred: impl FnMut(&str) -> bool,
+) -> Result<String, String> {
+    let deadline = Instant::now() + budget;
     let mut last = String::new();
     while Instant::now() < deadline {
         thread::sleep(Duration::from_millis(200));
-        let output = Command::new("tmux")
-            .args([
-                "-S",
-                &socket.to_string_lossy(),
-                "capture-pane",
-                "-t",
-                "view",
-                "-p",
-                "-J",
-            ])
-            .output()
-            .map_err(|e| e.to_string())?;
-        last = String::from_utf8_lossy(&output.stdout).into_owned();
-        if last.contains("mht-http") && last.contains("mock-upstream") {
-            break;
+        last = pane_text(socket)?;
+        if pred(&last) {
+            return Ok(last);
         }
     }
+    Err(format!("pane condition not met:\n{last}"))
+}
+
+fn stop_view(socket: &Path) {
     let _ = Command::new("tmux")
         .args([
             "-S",
@@ -974,7 +1106,6 @@ fn capture_tui(lab: &Lab, api: u16) -> Result<String, String> {
         ])
         .stderr(Stdio::null())
         .status();
-    Ok(last)
 }
 
 fn tun_probe() -> String {

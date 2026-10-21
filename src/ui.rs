@@ -15,7 +15,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row as TuiRow, Table, TableState};
 use ratatui::Frame;
 
-use crate::state::{human_bytes, Dashboard, SortMode};
+use crate::state::{human_bytes, Dashboard, SortMode, OFFLINE_STATUS};
 
 pub const KEYS_HELP: &str = "s sort  q quit  arrows select";
 pub const SCOPE_NOTE: &str =
@@ -40,25 +40,41 @@ impl Default for UiState {
 }
 
 pub fn draw(frame: &mut Frame, dashboard: &Dashboard, ui: &mut UiState) {
-    if frame.area().height < 11 || frame.area().width < 70 {
-        frame.render_widget(
-            Paragraph::new(format!(
-                "mihomo-top: {}{}\nResize to at least 70x11; q quits",
-                dashboard.connection_state,
-                if dashboard.stale { " (stale)" } else { "" }
-            )),
-            frame.area(),
+    let warning = dashboard.warning.as_deref();
+    let warn_rows: u16 = if warning.is_some() { 1 } else { 0 };
+    if frame.area().height < 11 + warn_rows || frame.area().width < 70 {
+        let mut text = format!(
+            "mihomo-top: {}{}\nResize to at least 70x11; q quits",
+            dashboard.connection_state,
+            if dashboard.stale { " (stale)" } else { "" }
         );
+        if let Some(warning) = warning {
+            text.push('\n');
+            text.push_str(warning);
+        }
+        frame.render_widget(Paragraph::new(text), frame.area());
         return;
     }
-    let sections = Layout::vertical([
+    let mut constraints = vec![
         Constraint::Length(6),
         Constraint::Min(3),
         Constraint::Length(2),
-    ])
-    .split(frame.area());
+    ];
+    if warning.is_some() {
+        constraints.insert(1, Constraint::Length(1));
+    }
+    let sections = Layout::vertical(constraints).split(frame.area());
     draw_header(frame, sections[0], dashboard);
-    draw_table(frame, sections[1], dashboard, ui);
+    let mut table_at = 1;
+    if let Some(warning) = warning {
+        frame.render_widget(
+            Paragraph::new(safe_text(warning))
+                .style(Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            sections[1],
+        );
+        table_at = 2;
+    }
+    draw_table(frame, sections[table_at], dashboard, ui);
     let detail = ui
         .table
         .selected()
@@ -67,12 +83,15 @@ pub fn draw(frame: &mut Frame, dashboard: &Dashboard, ui: &mut UiState) {
         .unwrap_or(SCOPE_NOTE);
     frame.render_widget(
         Paragraph::new(vec![Line::from(KEYS_HELP), Line::from(safe_text(detail))]),
-        sections[2],
+        sections[table_at + 1],
     );
 }
 
 /// Traffic-light color for the connection state word.
 fn state_style(state: &str, stale: bool) -> Style {
+    if state == "offline" {
+        return Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+    }
     if stale {
         return Style::new().fg(Color::Red).add_modifier(Modifier::BOLD);
     }
@@ -85,7 +104,9 @@ fn state_style(state: &str, stale: bool) -> Style {
 
 /// Chain coloring: DIRECT is a non-event (dim); anything proxied is accented.
 fn chain_style(chain: &str) -> Style {
-    if chain.eq_ignore_ascii_case("direct") || chain.is_empty() {
+    if chain == OFFLINE_STATUS {
+        Style::new().fg(Color::Yellow)
+    } else if chain.eq_ignore_ascii_case("direct") || chain.is_empty() {
         Style::new().fg(Color::DarkGray)
     } else {
         Style::new().fg(Color::Cyan)
@@ -125,7 +146,7 @@ fn draw_header(frame: &mut Frame, area: Rect, dashboard: &Dashboard) {
         SortMode::NewestFirst => "newest",
     };
     let title = format!("mihomo-top | {} | sort:{sort}", dashboard.controller);
-    let state = if dashboard.stale {
+    let state = if dashboard.stale && dashboard.connection_state != "offline" {
         format!("{} (STALE)", dashboard.connection_state)
     } else {
         dashboard.connection_state.clone()
@@ -182,18 +203,25 @@ fn draw_table(frame: &mut Frame, area: Rect, dashboard: &Dashboard, ui: &mut UiS
             (Some(session), Some(pane)) => format!("{session}/{pane}"),
             _ => String::new(),
         };
-        let unresolved = row.process.is_empty();
-        let process = if unresolved {
-            row.attribution_status.as_str()
+        let offline = row.proxy_status.as_deref() == Some(OFFLINE_STATUS);
+        let unresolved = row.process.is_empty() && !offline;
+        let process = if !row.process.is_empty() {
+            row.process.as_str()
+        } else if offline {
+            OFFLINE_STATUS
         } else {
-            &row.process
+            row.attribution_status.as_str()
         };
         let total = row.upload.saturating_add(row.download);
         let cells = [
             Cell::from(safe_text(&row.host)),
             Cell::from(Text::from(row.destination_port.clone()).alignment(Alignment::Right)),
             Cell::from(row.network.clone()),
-            Cell::from(safe_text(process)).style(process_style(unresolved)),
+            Cell::from(safe_text(process)).style(if offline {
+                Style::new().fg(Color::Yellow)
+            } else {
+                process_style(unresolved)
+            }),
             Cell::from(safe_text(&pane)),
             Cell::from(safe_text(&if row.rule_payload.is_empty() {
                 row.rule.clone()
@@ -256,7 +284,11 @@ fn draw_table(frame: &mut Frame, area: Rect, dashboard: &Dashboard, ui: &mut UiS
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" connections "),
+                    .title(if dashboard.warning.is_some() {
+                        " processes "
+                    } else {
+                        " connections "
+                    }),
             )
             .row_highlight_style(
                 Style::new()
@@ -348,6 +380,33 @@ mod tests {
         ] {
             assert!(content.contains(value), "missing {value}");
         }
+    }
+
+    #[test]
+    fn offline_banner_is_yellow_and_marks_the_process() {
+        let mut dashboard = sample_dashboard();
+        dashboard.connection_state = "offline".into();
+        dashboard.stale = true;
+        dashboard.warning = Some(crate::state::offline_warning(&dashboard.controller));
+        dashboard.rows[0].chain = OFFLINE_STATUS.into();
+        dashboard.rows[0].proxy_status = Some(OFFLINE_STATUS.into());
+        dashboard.rows[0].chains.clear();
+        let (content, styles) = rendered(&dashboard);
+        for value in [
+            "WARNING: Mihomo offline (127.0.0.1:9090 unreachable)",
+            "processes are NOT proxied",
+            "mihomo-offline",
+            "curl",
+            "processes",
+        ] {
+            assert!(content.contains(value), "missing {value}");
+        }
+        assert!(
+            styles.iter().any(|style| {
+                style.fg == Some(Color::Yellow) && style.add_modifier.contains(Modifier::BOLD)
+            }),
+            "offline warning must be yellow"
+        );
     }
 
     #[test]

@@ -26,6 +26,10 @@ pub struct Config {
     pub mode: RunMode,
     pub attribution: bool,
     pub panes: bool,
+    /// `--once` exits non-zero when the controller never delivers a frame.
+    pub strict: bool,
+    /// Include the raw controller error after the short warning.
+    pub verbose: bool,
 }
 
 impl Default for Config {
@@ -39,6 +43,8 @@ impl Default for Config {
             mode: RunMode::Auto,
             attribution: true,
             panes: true,
+            strict: false,
+            verbose: false,
         }
     }
 }
@@ -72,6 +78,8 @@ impl Config {
                 "--format" => format = Some(value()?),
                 "--no-attribution" => cfg.attribution = false,
                 "--no-tmux" => cfg.panes = false,
+                "--strict" => cfg.strict = true,
+                "--verbose" => cfg.verbose = true,
                 "tui" | "--once" | "--stream" => {
                     if cfg.mode != RunMode::Auto {
                         return Err(FlowError::Config("choose exactly one output mode".into()));
@@ -141,6 +149,8 @@ impl Config {
            --no-tmux            Skip tmux pane queries\n\
            --tick-ms N          Output/UI interval, 100..60000 [1000]\n\
            --timeout-secs N     First-frame deadline for --once, 1..3600 [10]\n\
+           --strict             --once exits non-zero if the controller is unreachable\n\
+           --verbose            After the offline warning, also print the raw error\n\
            --format json|jsonl  Select --once or --stream format\n\
            -h, --help           Show this help\n\
            -V, --version        Show version\n\n\
@@ -197,6 +207,9 @@ mod tests {
         assert_eq!(parse(&["--format", "jsonl"]).unwrap().mode, RunMode::Stream);
         assert!(parse(&["tui", "--format", "json"]).is_err());
         assert!(parse(&["--once", "--stream"]).is_err());
+        assert!(parse(&["--strict", "--verbose"]).unwrap().strict);
+        assert!(parse(&["--verbose"]).unwrap().verbose);
+        assert!(!parse(&["--once"]).unwrap().strict);
     }
 
     #[test]
