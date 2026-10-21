@@ -102,8 +102,11 @@ pub fn query_panes(socket: Option<&str>, tmux_bin: &str) -> Result<Vec<PaneEntry
 pub fn parse_pane_output(text: &str) -> Vec<PaneEntry> {
     let mut by_id: HashMap<String, PaneEntry> = HashMap::new();
     for line in text.lines() {
-        // `splitn` keeps a malformed/user-controlled session name from
-        // shifting the required pane id and pid fields.
+        // tmux 3.5 writes the unit separator as the octal escape `\037` and
+        // doubles backslashes. Older tmux emits the raw separator. Unescape
+        // first, then split only twice so a separator inside the session
+        // name stays in that field.
+        let line = unescape_tmux_format(line);
         let parts: Vec<&str> = line.splitn(3, SEP).collect();
         if parts.len() < 3 {
             continue;
@@ -125,6 +128,42 @@ pub fn parse_pane_output(text: &str) -> Vec<PaneEntry> {
     let mut panes: Vec<_> = by_id.into_values().collect();
     panes.sort_by(|a, b| a.pane_id.cmp(&b.pane_id));
     panes
+}
+
+/// Undo tmux format escaping: `\\` → `\`, `\nnn` → that byte.
+fn unescape_tmux_format(line: &str) -> String {
+    let bytes = line.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'\\' {
+            if bytes.get(index + 1) == Some(&b'\\') {
+                out.push(b'\\');
+                index += 2;
+                continue;
+            }
+            let mut cursor = index + 1;
+            let mut value: u32 = 0;
+            let mut digits = 0;
+            while digits < 3
+                && cursor < bytes.len()
+                && bytes[cursor].is_ascii_digit()
+                && bytes[cursor] < b'8'
+            {
+                value = value * 8 + u32::from(bytes[cursor] - b'0');
+                cursor += 1;
+                digits += 1;
+            }
+            if digits > 0 && value <= 0xFF {
+                out.push(value as u8);
+                index = cursor;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn strip_controls(s: &str) -> String {
@@ -183,6 +222,20 @@ impl PaneMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tmux_3_5_octal_separator_still_parses() {
+        // Captured shape: the unit separator is the four characters `\037`,
+        // and a backslash in the session name is doubled.
+        let text = "%0\\0376780\\037sp ace\n%1\\0376784\\037has\\\\037x\n";
+        let panes = parse_pane_output(text);
+        assert_eq!(panes.len(), 2);
+        let spaced = panes.iter().find(|pane| pane.pane_id == "%0").unwrap();
+        assert_eq!(spaced.pane_pid, 6780);
+        assert_eq!(spaced.session_name, "sp ace");
+        let escaped = panes.iter().find(|pane| pane.pane_id == "%1").unwrap();
+        assert_eq!(escaped.session_name, "has\\037x");
+    }
 
     #[test]
     fn parses_and_dedups() {

@@ -4,6 +4,11 @@ All notable user-facing changes are recorded here.
 
 ## Unreleased
 
+### Fixed
+- Pane attribution on tmux 3.5. That version prints the unit separator in
+  `list-panes -F` as the octal escape `\037`, so the pane list was parsed as
+  empty and every connection stayed without a session.
+
 ### Added
 - TUI polish (no new dependencies): semantic colors (connection state
   green/yellow/red, DIRECT chains dimmed, proxied chains accented,
