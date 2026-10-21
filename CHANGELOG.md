@@ -10,6 +10,11 @@ All notable user-facing changes are recorded here.
   empty and every connection stayed without a session.
 
 ### Added
+- Reproducible Linux lab (`scripts/test-env.sh`): a pinned mihomo with a
+  loopback DIRECT outbound and a mock upstream, fake egress responses, and
+  live tests for process proxy settings, attribution, and a stopped
+  controller. GitHub Actions runs that lab on Linux and checks the Linux-only
+  build guard on macOS.
 - TUI polish (no new dependencies): semantic colors (connection state
   green/yellow/red, DIRECT chains dimmed, proxied chains accented,
   unresolved-attribution reasons in yellow, byte magnitudes tinted at

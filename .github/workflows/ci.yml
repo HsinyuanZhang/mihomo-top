@@ -29,3 +29,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - run: rustup toolchain install 1.88.0 --profile minimal
       - run: cargo +1.88.0 test --locked
+  live-lab:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Local mihomo lab
+        run: bash scripts/test-env.sh
+  macos-guard:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Lab script refuses a non-Linux host
+        run: |
+          set +e
+          bash scripts/test-env.sh check
+          status=$?
+          set -e
+          test "${status}" -eq 2
+      - name: Install Rust
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+          fi
+          # shellcheck disable=SC1091
+          . "${HOME}/.cargo/env"
+          rustup toolchain install stable --profile minimal
+      - name: Crate does not build off Linux
+        run: |
+          # shellcheck disable=SC1091
+          . "${HOME}/.cargo/env"
+          set +e
+          cargo check --locked >check.out 2>check.err
+          status=$?
+          set -e
+          cat check.err
+          test "${status}" -ne 0
+          grep -q "currently supports Linux only" check.err

@@ -14,6 +14,12 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
+The live controller lab is Linux-only and is not part of `cargo test` unless you opt in:
+
+```sh
+scripts/test-env.sh
+```
+
 ## Reporting bugs
 
 State the `mihomo-top` version, Linux distribution/kernel context, Rust version if built from source, mihomo version, the command used (with secrets removed), expected behavior, and observed behavior. For attribution reports, say whether the traffic was TCP or UDP and whether it belonged to the same user.

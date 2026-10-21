@@ -6,7 +6,7 @@ It runs entirely as an ordinary user: no root access, daemon, packet capture, or
 
 > **Experimental v0.1.** Treat the output as a live observability aid, not an accounting record or a complete inventory of machine traffic. Read the [limitations](docs/limitations.md) before depending on it.
 
-[简体中文说明](README.zh-CN.md) · [Output schema](docs/output-schema.md) · [Validation](docs/validation.md) · [Roadmap](docs/roadmap.md) · [Contributing](CONTRIBUTING.md)
+[简体中文说明](README.zh-CN.md) · [Output schema](docs/output-schema.md) · [Validation](docs/validation.md) · [Testing](TESTING.md) · [Roadmap](docs/roadmap.md) · [Contributing](CONTRIBUTING.md)
 
 ## What it monitors
 
@@ -116,6 +116,14 @@ When both a secret file and `MIHOMO_SECRET` are available, the explicit file is 
 Local attribution is optional and performed only on the local Linux host. `--no-attribution` disables it completely; `--no-tmux` keeps process lookup but disables tmux lookup. The monitor does not need root, so sockets owned by other users can remain unattributed. The connection stream and its destination metadata are supplied by the local mihomo controller; the tool does not create connection history or promise complete coverage.
 
 For detail on these boundaries and failure cases, see [docs/limitations.md](docs/limitations.md).
+
+## Testing
+
+Offline checks (`cargo test --locked`) do not need mihomo. The live lab in [TESTING.md](TESTING.md) downloads a pinned mihomo binary, points it at a local mock proxy, and checks per-process status, reported destination, and connectivity:
+
+```sh
+scripts/test-env.sh
+```
 
 ## License
 

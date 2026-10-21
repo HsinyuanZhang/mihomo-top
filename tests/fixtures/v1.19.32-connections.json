@@ -1,0 +1,60 @@
+{
+  "downloadTotal": 0,
+  "uploadTotal": 141,
+  "memory": 0,
+  "connections": [
+    {
+      "id": "fixture-http",
+      "metadata": {
+        "network": "tcp",
+        "type": "HTTP",
+        "sourceIP": "127.0.0.1",
+        "destinationIP": "127.0.0.1",
+        "sourceGeoIP": null,
+        "destinationGeoIP": null,
+        "sourceIPASN": "",
+        "destinationIPASN": "",
+        "sourcePort": "48160",
+        "destinationPort": "43157",
+        "inboundIP": "127.0.0.1",
+        "inboundPort": "17890",
+        "inboundName": "DEFAULT-HTTP",
+        "inboundUser": "",
+        "host": "",
+        "dnsMode": "normal",
+        "uid": 0,
+        "process": "",
+        "processPath": "",
+        "remoteDestination": "127.0.0.1",
+        "dscp": 0,
+        "sniffHost": ""
+      },
+      "upload": 77,
+      "download": 0,
+      "start": "2026-10-21T11:27:58.40773861Z",
+      "chains": ["mock-upstream"],
+      "providerChains": [""],
+      "rule": "DstPort",
+      "rulePayload": "43157"
+    },
+    {
+      "id": "fixture-direct",
+      "metadata": {
+        "network": "tcp",
+        "type": "HTTP",
+        "sourceIP": "127.0.0.1",
+        "destinationIP": "127.0.0.1",
+        "sourcePort": "40002",
+        "destinationPort": "80",
+        "host": "",
+        "dnsMode": "normal"
+      },
+      "upload": 20,
+      "download": 0,
+      "start": "2026-10-21T11:27:58.407819494Z",
+      "chains": ["DIRECT"],
+      "rule": "Match",
+      "rulePayload": ""
+    }
+  ]
+}

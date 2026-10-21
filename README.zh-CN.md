@@ -6,7 +6,7 @@
 
 > **实验性 v0.1。** 输出适合实时排查，不是记账记录，也不保证涵盖主机全部流量。依赖输出前请阅读[限制说明](docs/limitations.md)。
 
-[English README](README.md) · [输出 Schema](docs/output-schema.md) · [验证](docs/validation.md) · [路线图](docs/roadmap.md) · [贡献指南](CONTRIBUTING.md)
+[English README](README.md) · [输出 Schema](docs/output-schema.md) · [验证](docs/validation.md) · [测试](TESTING.md) · [路线图](docs/roadmap.md) · [贡献指南](CONTRIBUTING.md)
 
 ## 监视范围
 
@@ -116,3 +116,11 @@ journalctl --user -u mihomo-top.service -f -o cat
 本机归属是可选功能，只在本机 Linux 主机上执行。`--no-attribution` 会完全关闭；`--no-tmux` 保留进程查询但关闭 tmux 查询。程序不需要 root，因此其他用户拥有的 socket 可能无法归属。连接流及其目标元数据来自本机 mihomo 控制器；本工具不会建立连接历史，也不保证完整覆盖。
 
 更多边界和失败场景见[docs/limitations.md](docs/limitations.md)。
+
+## 测试
+
+离线检查（`cargo test --locked`）不需要 mihomo。实机实验环境的运行方式见 [TESTING.md](TESTING.md)：脚本会下载固定版本的 mihomo，只使用本机 mock 代理，并核对每个进程的可见状态、控制器报告的目标和连通性。
+
+```sh
+scripts/test-env.sh
+```
